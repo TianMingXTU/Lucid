@@ -23,6 +23,11 @@ class Parser:
         token = self.current_token
         if token.type == "INTEGER":
             self._eat("INTEGER")
+            # Look ahead for a unit
+            if self.current_token.type == "IDENTIFIER":
+                unit_token = self.current_token
+                self._eat("IDENTIFIER")
+                return UnitNumber(token, unit_token)
             return Num(token)
         elif token.type == "IDENTIFIER":
             self._eat("IDENTIFIER")
@@ -158,14 +163,24 @@ class Parser:
         return FunctionLiteral(params, body)
 
     def _if(self):
+        """This now correctly handles both `if c then e` AND `if c { ... }`"""
         self._eat("IF")
         condition = self._expression()
-        self._eat("THEN")
-        then_branch = self._expression()
+
+        if self.current_token.type == "LBRACE":
+            then_branch = self._block()
+        else:
+            self._eat("THEN")
+            then_branch = self._expression()
+
         else_branch = None
         if self.current_token.type == "ELSE":
             self._eat("ELSE")
-            else_branch = self._expression()
+            if self.current_token.type == "LBRACE":
+                else_branch = self._block()
+            else:
+                else_branch = self._expression()
+
         return IfExpression(condition, then_branch, else_branch)
 
     def _statement(self):

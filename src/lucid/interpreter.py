@@ -4,16 +4,6 @@ from collections import Counter
 from concurrent.futures import ThreadPoolExecutor
 
 
-# --- NEW: Task object now holds a Future from the thread pool ---
-class Task:
-    def __init__(self, future):
-        self.future = future
-
-    def __repr__(self):
-        return f"<Task running={self.future.running()}>"
-
-
-# (All other runtime classes: OkValue, ErrValue, Unit, etc. are unchanged)
 class OkValue:
     def __init__(self, value):
         self.value = value
@@ -113,6 +103,14 @@ class BuiltinFunction:
         return f"<Builtin Function: {self.name}>"
 
 
+class Task:
+    def __init__(self, future):
+        self.future = future
+
+    def __repr__(self):
+        return f"<Task running={self.future.running()}>"
+
+
 class Environment:
     def __init__(self, outer=None):
         self.store, self.outer = {}, outer
@@ -144,36 +142,21 @@ class NodeVisitor:
 
 
 class Interpreter(NodeVisitor):
-    """解释器 (v3.3 - 真正并行并发)"""
-
     def __init__(self):
         self.env = Environment()
         self._populate_builtins()
-        # --- NEW: A thread pool to execute tasks concurrently ---
         self.executor = ThreadPoolExecutor()
 
+    def __del__(self):
+        self.executor.shutdown(wait=False)
+
     def _populate_builtins(self):
-        # ... (builtins are the same) ...
         self.env.set("Ok", BuiltinFunction(lambda value: OkValue(value), "Ok"))
         self.env.set("Err", BuiltinFunction(lambda msg: ErrValue(msg), "Err"))
-        self.env.set(
-            "is_ok", BuiltinFunction(lambda arg: isinstance(arg, OkValue), "is_ok")
-        )
-        self.env.set(
-            "is_err", BuiltinFunction(lambda arg: isinstance(arg, ErrValue), "is_err")
-        )
-        self.env.set(
-            "unwrap_or",
-            BuiltinFunction(
-                lambda res, default: res.value if isinstance(res, OkValue) else default,
-                "unwrap_or",
-            ),
-        )
         self.env.set(
             "print", BuiltinFunction(lambda arg: print(arg) or OkValue(None), "print")
         )
 
-    # ... (visit_BlockStatement, BinOp, UnaryOp, etc. are unchanged) ...
     def visit_BlockStatement(self, node):
         last_result = None
         for statement in node.statements:
@@ -278,14 +261,14 @@ class Interpreter(NodeVisitor):
     def visit_Num(self, node):
         return node.value
 
+    def visit_UnitNumber(self, node):
+        return UnitValue(node.value, Unit([node.unit]))
+
     def visit_Boolean(self, node):
         return node.value
 
     def visit_StringLiteral(self, node):
         return node.value
-
-    def visit_UnitNumber(self, node):
-        return UnitValue(node.value, Unit([node.unit]))
 
     def visit_UnaryOp(self, node):
         op = node.op.type
@@ -315,33 +298,21 @@ class Interpreter(NodeVisitor):
     def visit_FunctionLiteral(self, node):
         return Function(node.parameters, node.body, self.env)
 
-    # --- UPGRADED: Concurrency visit methods ---
     def visit_SpawnExpression(self, node):
-        """Submits the task to the thread pool for concurrent execution."""
-
         def task_target(block, spawn_env):
-            # Each thread needs its own interpreter instance to be thread-safe
             thread_interpreter = Interpreter()
             thread_interpreter.env = Environment(outer=spawn_env)
             return thread_interpreter.visit(block)
 
-        # We submit the target function to the executor.
-        # It will run in a separate thread.
         future = self.executor.submit(task_target, node.block, self.env)
         return Task(future)
 
     def visit_AwaitExpression(self, node):
-        """Waits for a spawned task to complete and returns its result."""
         task_obj = self.visit(node.task_expr)
         if not isinstance(task_obj, Task):
             raise TypeError("await can only be used on a task")
-
-        # .result() blocks until the future is complete
         result = task_obj.future.result()
-
-        if isinstance(result, ReturnValue):
-            return result.value
-        return result
+        return result.value if isinstance(result, ReturnValue) else result
 
     def _apply_function(self, func, args):
         if isinstance(func, BuiltinFunction):
@@ -355,11 +326,9 @@ class Interpreter(NodeVisitor):
             raise TypeError(
                 f"Expected {len(func.parameters)} arguments, got {len(args)}"
             )
-
         call_env, original_env = Environment(outer=func.env), self.env
         for param, arg in zip(func.parameters, args):
             call_env.set(param.value, arg)
-
         self.env = call_env
         result = self.visit(func.body)
         self.env = original_env

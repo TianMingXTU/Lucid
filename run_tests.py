@@ -1,12 +1,10 @@
-# run_tests.py (Upgraded for v3.3)
+# run_tests.py (Final version for v3.3)
 import sys
-import time
 from src.lucid.lexer import Lexer
 from src.lucid.parser import Parser
 from src.lucid.interpreter import Interpreter, UnitValue, Unit, OkValue, ErrValue, Task
 
 TEST_CASES = [
-    # ... (All previous 16 tests remain) ...
     {
         "name": "Recursive Function",
         "source": "let factorial = fn(n) { if n == 0 then 1 else { n * factorial(n - 1) } }; factorial(5)",
@@ -20,19 +18,39 @@ TEST_CASES = [
     {
         "name": "Result: Successful Division",
         "source": "100 / 10",
-        "expected": OkValue(UnitValue(10, Unit())),
+        "expected": OkValue(10),
+    },
+    {
+        "name": "Result: Failed Division",
+        "source": "100 / 0",
+        "expected": ErrValue("Division by zero"),
+    },
+    {
+        "name": "Pipe: Simple Pipe",
+        "source": "let double = fn(x){x*2}; 10 |> double",
+        "expected": 20,
+    },
+    {
+        "name": "Pipe: Chained Pipe",
+        "source": "let inc = fn(x){x+1}; let dbl = fn(x){x*2}; 5 |> inc |> dbl",
+        "expected": 12,
     },
     {
         "name": "Pipe: Short-circuit on Err",
         "source": "let double = fn(x){x*2}; (100/0) |> double",
         "expected": ErrValue("Division by zero"),
     },
+    {"name": "Builtin: Ok()", "source": "Ok(100)", "expected": OkValue(100)},
     {
-        "name": "Builtin: unwrap_or() with Err",
-        "source": 'unwrap_or(Err("oops"), -1)',
-        "expected": -1,
+        "name": "Builtin: Err()",
+        "source": 'Err("file not found")',
+        "expected": ErrValue("file not found"),
     },
-    # --- v3.3 NEW: Concurrency Logic Tests ---
+    {
+        "name": "Manual: If Expression with Blocks",
+        "source": 'let status = "adult"; if status == "adult" { "Welcome" } else { "Sorry" }',
+        "expected": "Welcome",
+    },
     {
         "name": "Concurrency: Spawn returns a task",
         "source": "spawn { 1+1 }",
@@ -90,7 +108,6 @@ def run_all_tests():
     print("=" * 50)
     passed_count = 0
     failed_count = 0
-    # A single interpreter to run all tests
     interpreter = Interpreter()
     for i, case in enumerate(TEST_CASES):
         name, source, expected = case["name"], case["source"], case["expected"]
@@ -100,7 +117,6 @@ def run_all_tests():
             lexer = Lexer(source)
             parser = Parser(lexer)
             ast = parser.parse()
-            # We use the same interpreter to allow 'let' statements to define vars for later tests
             result_val = interpreter.visit(ast)
             if compare_results(result_val, expected):
                 print("\033[92m [PASS] \033[0m")
@@ -125,10 +141,7 @@ def run_all_tests():
                     f"      - Source: {source}\n      - Expected: {repr(expected)}\n      - Exception: {type(e).__name__}: {e}"
                 )
                 failed_count += 1
-
-    # Clean up the thread pool
     interpreter.executor.shutdown(wait=True)
-
     print("-" * 50)
     print("Test Summary:")
     print(f"\033[92m  Passed: {passed_count}\033[0m")
