@@ -1,9 +1,19 @@
 # src/lucid/interpreter.py
 from .ast import *
 from collections import Counter
+from concurrent.futures import ThreadPoolExecutor
 
 
-# ... (All previous runtime classes: OkValue, ErrValue, Unit, etc. are unchanged) ...
+# --- NEW: Task object now holds a Future from the thread pool ---
+class Task:
+    def __init__(self, future):
+        self.future = future
+
+    def __repr__(self):
+        return f"<Task running={self.future.running()}>"
+
+
+# (All other runtime classes: OkValue, ErrValue, Unit, etc. are unchanged)
 class OkValue:
     def __init__(self, value):
         self.value = value
@@ -103,16 +113,6 @@ class BuiltinFunction:
         return f"<Builtin Function: {self.name}>"
 
 
-# *** NEW: Task object for concurrency ***
-class Task:
-    def __init__(self, block, env):
-        self.block = block
-        self.env = env  # The environment where the task was spawned
-
-    def __repr__(self):
-        return "<Task>"
-
-
 class Environment:
     def __init__(self, outer=None):
         self.store, self.outer = {}, outer
@@ -144,13 +144,17 @@ class NodeVisitor:
 
 
 class Interpreter(NodeVisitor):
+    """解释器 (v3.3 - 真正并行并发)"""
+
     def __init__(self):
         self.env = Environment()
         self._populate_builtins()
+        # --- NEW: A thread pool to execute tasks concurrently ---
+        self.executor = ThreadPoolExecutor()
 
     def _populate_builtins(self):
+        # ... (builtins are the same) ...
         self.env.set("Ok", BuiltinFunction(lambda value: OkValue(value), "Ok"))
-        # ... (other builtins)
         self.env.set("Err", BuiltinFunction(lambda msg: ErrValue(msg), "Err"))
         self.env.set(
             "is_ok", BuiltinFunction(lambda arg: isinstance(arg, OkValue), "is_ok")
@@ -169,7 +173,7 @@ class Interpreter(NodeVisitor):
             "print", BuiltinFunction(lambda arg: print(arg) or OkValue(None), "print")
         )
 
-    # ... (visit_BlockStatement, visit_BinOp, visit_UnaryOp, etc. are unchanged) ...
+    # ... (visit_BlockStatement, BinOp, UnaryOp, etc. are unchanged) ...
     def visit_BlockStatement(self, node):
         last_result = None
         for statement in node.statements:
@@ -219,11 +223,13 @@ class Interpreter(NodeVisitor):
                 )
             return UnitValue(l_val + r_val if op == "PLUS" else l_val - r_val, l_unit)
         elif op == "MUL":
-            new_unit = Unit(
-                l_unit.numerators + r_unit.numerators,
-                l_unit.denominators + r_unit.denominators,
+            return UnitValue(
+                l_val * r_val,
+                Unit(
+                    l_unit.numerators + r_unit.numerators,
+                    l_unit.denominators + r_unit.denominators,
+                ),
             )
-            return UnitValue(l_val * r_val, new_unit)
         elif op == "DIV":
             if r_val == 0:
                 return ErrValue("Division by zero")
@@ -309,25 +315,29 @@ class Interpreter(NodeVisitor):
     def visit_FunctionLiteral(self, node):
         return Function(node.parameters, node.body, self.env)
 
-    # *** NEW: Concurrency visit methods ***
+    # --- UPGRADED: Concurrency visit methods ---
     def visit_SpawnExpression(self, node):
-        # For now, just create a Task object. No real concurrency yet.
-        return Task(node.block, self.env)
+        """Submits the task to the thread pool for concurrent execution."""
+
+        def task_target(block, spawn_env):
+            # Each thread needs its own interpreter instance to be thread-safe
+            thread_interpreter = Interpreter()
+            thread_interpreter.env = Environment(outer=spawn_env)
+            return thread_interpreter.visit(block)
+
+        # We submit the target function to the executor.
+        # It will run in a separate thread.
+        future = self.executor.submit(task_target, node.block, self.env)
+        return Task(future)
 
     def visit_AwaitExpression(self, node):
-        task = self.visit(node.task_expr)
-        if not isinstance(task, Task):
+        """Waits for a spawned task to complete and returns its result."""
+        task_obj = self.visit(node.task_expr)
+        if not isinstance(task_obj, Task):
             raise TypeError("await can only be used on a task")
 
-        # In this version, we execute the task sequentially.
-        # We create a new environment for the task, based on where it was spawned.
-        task_env = Environment(outer=task.env)
-
-        # Temporarily switch to the task's environment to execute its block
-        original_env = self.env
-        self.env = task_env
-        result = self.visit(task.block)
-        self.env = original_env
+        # .result() blocks until the future is complete
+        result = task_obj.future.result()
 
         if isinstance(result, ReturnValue):
             return result.value
