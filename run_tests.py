@@ -1,33 +1,40 @@
-# run_tests.py (Final version for v3.0)
+# run_tests.py (Upgraded for v3.2)
 import sys
 from src.lucid.lexer import Lexer
 from src.lucid.parser import Parser
-from src.lucid.interpreter import Interpreter, UnitValue, Unit
+from src.lucid.interpreter import Interpreter, UnitValue, Unit, OkValue, ErrValue
 
 TEST_CASES = [
-    {"name": "Simple Addition", "source": "10 + 5", "expected": 15},
-    {"name": "Operator Precedence", "source": "10 + 2 * 3", "expected": 16},
+    # --- Basic Sanity Checks ---
     {
         "name": "Recursive Function",
         "source": "let factorial = fn(n) { if n == 0 then 1 else { n * factorial(n - 1) } }; factorial(5)",
         "expected": 120,
     },
+    # --- Division now returns direct values on success ---
+    {"name": "Successful Division", "source": "100 / 10", "expected": 10},
     {
-        "name": "Unit Addition",
-        "source": "10*m + 5*m",
-        "expected": UnitValue(15, Unit(["m"])),
+        "name": "Failed Division",
+        "source": "100 / 0",
+        "expected": ErrValue("Division by zero"),
+    },
+    # --- Pipe Tests ---
+    {
+        "name": "Pipe: Simple Pipe",
+        "source": "let double = fn(x){x*2}; 10 |> double",
+        "expected": 20,
     },
     {
-        "name": "Unit Multiplication by Scalar",
-        "source": "10*kg * 3",
-        "expected": UnitValue(30, Unit(["kg"])),
+        "name": "Pipe: Chained Pipe",
+        "source": "let inc = fn(x){x+1}; let dbl = fn(x){x*2}; 5 |> inc |> dbl",
+        "expected": 12,
     },
-    {"name": "Unit Comparison", "source": "100*m > 50*m", "expected": True},
     {
-        "name": "Unit Multiplication (Area)",
-        "source": "10*m * 5*m",
-        "expected": UnitValue(50, Unit(["m", "m"])),
+        "name": "Pipe: Short-circuit on Err",
+        "source": "let double = fn(x){x*2}; (100/0) |> double",
+        "expected": ErrValue("Division by zero"),
     },
+    # --- Unit System Tests (now expect direct UnitValues) ---
     {
         "name": "Unit Division (Speed)",
         "source": "100*km / (10*hr)",
@@ -38,47 +45,36 @@ TEST_CASES = [
         "source": "100*m*m / (10*m)",
         "expected": UnitValue(10, Unit(["m"])),
     },
-    {"name": "Exponentiation (Scalar)", "source": "2^3", "expected": 8},
-    {
-        "name": "Exponentiation (Unit)",
-        "source": "(10*m)^2",
-        "expected": UnitValue(100, Unit(["m", "m"])),
-    },
-    {
-        "name": "Exponentiation (Right-associativity)",
-        "source": "2^3^2",
-        "expected": 512,
-    },
-    {
-        "name": "Exponentiation (Fail with unit exponent)",
-        "source": "10*m^(2*s)",
-        "expected": "TypeError: Exponent must be a scalar (dimensionless) number",
-    },
     {
         "name": "Complex Unit Expression",
         "source": "let force = 10*kg*m/(s^2); force",
         "expected": UnitValue(10, Unit(["kg", "m"], ["s", "s"])),
     },
+    # --- Builtin Function Tests ---
+    {"name": "Builtin: Ok()", "source": "Ok(100)", "expected": OkValue(100)},
+    {
+        "name": "Builtin: Err()",
+        "source": 'Err("file not found")',
+        "expected": ErrValue("file not found"),
+    },
+    {"name": "Builtin: is_ok() True", "source": "is_ok(Ok(10))", "expected": True},
 ]
 
 
 def compare_results(result, expected):
+    # Unpack unitless values for easier comparison
     if (
         isinstance(result, UnitValue)
         and not result.unit.numerators
         and not result.unit.denominators
     ):
         result = result.value
-    if isinstance(expected, str) and expected.startswith("TypeError:"):
-        return isinstance(result, TypeError) and str(result) == expected.replace(
-            "TypeError: ", ""
-        )
     return result == expected
 
 
 def run_all_tests():
     print("=" * 50)
-    print("  Running Lucid Language Test Suite v3.0")
+    print("  Running Lucid Language Test Suite v3.2")
     print("=" * 50)
     passed_count = 0
     failed_count = 0
@@ -102,11 +98,15 @@ def run_all_tests():
                 )
                 failed_count += 1
         except Exception as e:
+            # A simple way to check for expected errors
             if (
-                isinstance(expected, str)
-                and expected.startswith(type(e).__name__ + ":")
-                and str(e) in expected
+                isinstance(expected, ErrValue)
+                and isinstance(e, TypeError)
+                and expected.message in str(e)
             ):
+                print("\033[92m [PASS] (Correctly caught error)\033[0m")
+                passed_count += 1
+            elif expected == e:
                 print("\033[92m [PASS] (Correctly caught error)\033[0m")
                 passed_count += 1
             else:

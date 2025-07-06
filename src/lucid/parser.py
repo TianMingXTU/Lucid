@@ -4,7 +4,7 @@ from .ast import *
 
 
 class Parser:
-    """语法分析器 (v3.1 - 最终稳定版)"""
+    """语法分析器 (v3.2 - 基于递归下降重写，绝对稳定)"""
 
     def __init__(self, lexer):
         self.tokens = lexer.get_token_stream()
@@ -15,22 +15,17 @@ class Parser:
             self.current_token = next(self.tokens)
         else:
             raise SyntaxError(
-                f"Parser Error: Expected {token_type}, but found {self.current_token.type}"
+                f"Parser Error: Expected {token_type}, but found {self.current_token.type} ({self.current_token.value})"
             )
 
     def _primary(self):
-        """处理原子表达式，这是语法的最高优先级部分"""
         token = self.current_token
         if token.type == "INTEGER":
             self._eat("INTEGER")
             return Num(token)
         elif token.type == "IDENTIFIER":
-            # This logic needs to be careful about function calls vs variables.
-            # A more robust implementation might use a different approach.
             node = VarAccess(token)
             self._eat("IDENTIFIER")
-            if self.current_token.type == "LPAREN":
-                return self._call(node)
             return node
         elif token.type in ("TRUE", "FALSE"):
             self._eat(token.type)
@@ -47,56 +42,38 @@ class Parser:
             return self._function()
         elif token.type == "IF":
             return self._if()
-        # *** FIX: Allow a block statement to be a primary expression ***
         elif token.type == "LBRACE":
             return self._block()
-
         raise SyntaxError(f"Invalid primary expression at {token}")
 
-    def _call(self, node):
-        args = []
-        self._eat("LPAREN")
-        if self.current_token.type != "RPAREN":
-            args.append(self._expression())
-            while self.current_token.type == "COMMA":
-                self._eat("COMMA")
+    def _call(self):
+        node = self._primary()
+        while self.current_token.type == "LPAREN":
+            self._eat("LPAREN")
+            args = []
+            if self.current_token.type != "RPAREN":
                 args.append(self._expression())
-        self._eat("RPAREN")
-
-        # Check for another function call, e.g. foo(1)(2)
-        if self.current_token.type == "LPAREN":
-            return self._call(CallExpression(node, args))
-
-        return CallExpression(node, args)
+                while self.current_token.type == "COMMA":
+                    self._eat("COMMA")
+                    args.append(self._expression())
+            self._eat("RPAREN")
+            node = CallExpression(node, args)
+        return node
 
     def _unary(self):
         token = self.current_token
         if token.type in ("PLUS", "MINUS"):
             self._eat(token.type)
             return UnaryOp(token, self._unary())
-
-        # This will now correctly handle function calls like `my_func()`
-        # because _primary handles it.
-        node = self._primary()
-
-        # Handle post-primary function calls like `1.my_method()` if we add them later
-        # For now, just handle standard calls.
-        if self.current_token.type == "LPAREN":
-            # This handles cases like `(fn(){...})()`
-            if isinstance(node, FunctionLiteral):
-                return self._call(node)
-
-        return node
+        return self._call()
 
     def _power(self):
-        # *** FIX: Correct implementation for right-associativity ***
         node = self._unary()
+        # Right-associativity for '^' handled by recursive call to _power
         if self.current_token.type == "CARET":
             op = self.current_token
             self._eat("CARET")
-            # The right-hand side is parsed with a lower precedence to handle right-associativity
-            right = self._power()
-            return BinOp(node, op, right)
+            node = BinOp(node, op, self._power())
         return node
 
     def _factor(self):
@@ -123,21 +100,32 @@ class Parser:
             node = BinOp(node, op, self._term())
         return node
 
+    _equality_ops = ("EQ", "NE")
+
     def _equality(self):
         node = self._comparison()
-        while self.current_token.type in ("EQ", "NE"):
+        while self.current_token.type in self._equality_ops:
             op = self.current_token
             self._eat(op.type)
             node = BinOp(node, op, self._comparison())
         return node
 
+    def _pipe(self):
+        node = self._equality()
+        while self.current_token.type == "PIPE":
+            op = self.current_token
+            self._eat("PIPE")
+            # Pipe has the lowest precedence and is left-associative
+            node = BinOp(node, op, self._equality())
+        return node
+
     def _expression(self):
-        return self._equality()
+        return self._pipe()
 
     def _block(self):
         self._eat("LBRACE")
         block = BlockStatement()
-        while self.current_token.type != "RBRACE":
+        while self.current_token.type not in ("RBRACE", "EOF"):
             block.statements.append(self._statement())
         self._eat("RBRACE")
         return block
@@ -171,15 +159,14 @@ class Parser:
         return IfExpression(condition, then_branch, else_branch)
 
     def _statement(self):
-        token = self.current_token
-        if token.type == "LET":
+        if self.current_token.type == "LET":
             self._eat("LET")
             var_token = self.current_token
             self._eat("IDENTIFIER")
             self._eat("EQUALS")
             value = self._expression()
             node = VarAssign(var_token, value)
-        elif token.type == "RETURN":
+        elif self.current_token.type == "RETURN":
             self._eat("RETURN")
             value = self._expression()
             node = ReturnStatement(value)

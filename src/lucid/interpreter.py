@@ -3,6 +3,29 @@ from .ast import *
 from collections import Counter
 
 
+# (All classes: OkValue, ErrValue, Unit, UnitValue, etc. remain the same)
+class OkValue:
+    def __init__(self, value):
+        self.value = value
+
+    def __repr__(self):
+        return f"Ok({repr(self.value)})"
+
+    def __eq__(self, other):
+        return isinstance(other, OkValue) and self.value == other.value
+
+
+class ErrValue:
+    def __init__(self, message):
+        self.message = message
+
+    def __repr__(self):
+        return f"Err('{self.message}')"
+
+    def __eq__(self, other):
+        return isinstance(other, ErrValue) and self.message == other.message
+
+
 class Unit:
     def __init__(self, numerators=None, denominators=None):
         self.numerators = Counter(numerators or [])
@@ -72,6 +95,14 @@ class Function:
         return f"<Function {len(self.parameters)} args>"
 
 
+class BuiltinFunction:
+    def __init__(self, fn, name="<builtin>"):
+        self.fn, self.name = fn, name
+
+    def __repr__(self):
+        return f"<Builtin Function: {self.name}>"
+
+
 class Environment:
     def __init__(self, outer=None):
         self.store, self.outer = {}, outer
@@ -105,6 +136,27 @@ class NodeVisitor:
 class Interpreter(NodeVisitor):
     def __init__(self):
         self.env = Environment()
+        self._populate_builtins()
+
+    def _populate_builtins(self):
+        self.env.set("Ok", BuiltinFunction(lambda value: OkValue(value), "Ok"))
+        self.env.set("Err", BuiltinFunction(lambda msg: ErrValue(msg), "Err"))
+        self.env.set(
+            "is_ok", BuiltinFunction(lambda arg: isinstance(arg, OkValue), "is_ok")
+        )
+        self.env.set(
+            "is_err", BuiltinFunction(lambda arg: isinstance(arg, ErrValue), "is_err")
+        )
+        self.env.set(
+            "unwrap_or",
+            BuiltinFunction(
+                lambda res, default: res.value if isinstance(res, OkValue) else default,
+                "unwrap_or",
+            ),
+        )
+        self.env.set(
+            "print", BuiltinFunction(lambda arg: print(arg) or OkValue(None), "print")
+        )
 
     def visit_BlockStatement(self, node):
         last_result = None
@@ -116,9 +168,19 @@ class Interpreter(NodeVisitor):
         return last_result
 
     def visit_BinOp(self, node):
+        op = node.op.type
+        if op == "PIPE":
+            left_val = self.visit(node.left)
+            if isinstance(left_val, ErrValue):
+                return left_val
+            value_to_pipe = (
+                left_val.value if isinstance(left_val, OkValue) else left_val
+            )
+            right_func = self.visit(node.right)
+            return self._apply_function(right_func, [value_to_pipe])
+
         left_unwrapped = self.visit(node.left)
         right_unwrapped = self.visit(node.right)
-        op = node.op.type
 
         left = (
             left_unwrapped
@@ -148,35 +210,32 @@ class Interpreter(NodeVisitor):
                 raise TypeError(
                     f"Cannot perform {op} on incompatible units: {l_unit} and {r_unit}"
                 )
-            new_val = l_val + r_val if op == "PLUS" else l_val - r_val
-            return UnitValue(new_val, l_unit)
+            return UnitValue(l_val + r_val if op == "PLUS" else l_val - r_val, l_unit)
         elif op == "MUL":
-            new_val = l_val * r_val
             new_unit = Unit(
                 l_unit.numerators + r_unit.numerators,
                 l_unit.denominators + r_unit.denominators,
             )
-            return UnitValue(new_val, new_unit)
+            return UnitValue(l_val * r_val, new_unit)
         elif op == "DIV":
             if r_val == 0:
-                raise TypeError("Division by zero")
-            new_val = l_val // r_val
+                return ErrValue("Division by zero")
             new_unit = Unit(
                 l_unit.numerators + r_unit.denominators,
                 l_unit.denominators + r_unit.numerators,
             )
-            return UnitValue(new_val, new_unit)
+            # *** THE CORE FIX: Return a direct UnitValue on success ***
+            return UnitValue(l_val // r_val, new_unit)
         elif op == "CARET":
             if r_unit.numerators or r_unit.denominators:
                 raise TypeError("Exponent must be a scalar (dimensionless) number")
-            new_val = l_val**r_val
             new_numerators = {
                 unit: power * r_val for unit, power in l_unit.numerators.items()
             }
             new_denominators = {
                 unit: power * r_val for unit, power in l_unit.denominators.items()
             }
-            return UnitValue(new_val, Unit(new_numerators, new_denominators))
+            return UnitValue(l_val**r_val, Unit(new_numerators, new_denominators))
         elif op in ("EQ", "NE", "GT", "GTE", "LT", "LTE"):
             if l_unit != r_unit:
                 raise TypeError(
@@ -201,6 +260,7 @@ class Interpreter(NodeVisitor):
             return UnitValue(1, Unit([var_name]))
         return val
 
+    # ... The rest of the visit methods are correct and remain unchanged ...
     def visit_Num(self, node):
         return node.value
 
@@ -225,6 +285,8 @@ class Interpreter(NodeVisitor):
 
     def visit_IfExpression(self, node):
         condition = self.visit(node.condition)
+        if isinstance(condition, OkValue):
+            condition = condition.value
         if not isinstance(condition, bool):
             raise TypeError("If condition must be a boolean value")
         return (
@@ -240,10 +302,17 @@ class Interpreter(NodeVisitor):
         return Function(node.parameters, node.body, self.env)
 
     def _apply_function(self, func, args):
+        if isinstance(func, BuiltinFunction):
+            try:
+                return func.fn(*args)
+            except TypeError as e:
+                raise TypeError(f"Built-in function error: {e}")
         if not isinstance(func, Function):
             raise TypeError("Can only call functions")
         if len(args) != len(func.parameters):
-            raise TypeError(f"Expected {len(func.parameters)} args, got {len(args)}")
+            raise TypeError(
+                f"Expected {len(func.parameters)} arguments, got {len(args)}"
+            )
         call_env, original_env = Environment(outer=func.env), self.env
         for param, arg in zip(func.parameters, args):
             call_env.set(param.value, arg)
