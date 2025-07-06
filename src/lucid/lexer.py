@@ -4,7 +4,7 @@ from .core_types import Token
 
 
 class Lexer:
-    """词法分析器 (v3.0 - 最终稳定版)"""
+    """词法分析器 (v3.2 - 支持并发关键字)"""
 
     def __init__(self, text):
         self.text = text
@@ -20,6 +20,8 @@ class Lexer:
             ("ELSE", r"\belse\b"),
             ("THEN", r"\bthen\b"),
             ("RETURN", r"\breturn\b"),
+            ("SPAWN", r"\bspawn\b"),  # NEW
+            ("AWAIT", r"\bawait\b"),  # NEW
             ("IDENTIFIER", r"[a-zA-Z_][a-zA-Z0-9_]*"),
             ("PIPE", r"\|>"),
             ("EQ", r"=="),

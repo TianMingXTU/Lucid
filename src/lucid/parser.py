@@ -4,7 +4,7 @@ from .ast import *
 
 
 class Parser:
-    """语法分析器 (v3.2 - 基于递归下降重写，绝对稳定)"""
+    """语法分析器 (v3.3 - 最终稳定版)"""
 
     def __init__(self, lexer):
         self.tokens = lexer.get_token_stream()
@@ -19,14 +19,14 @@ class Parser:
             )
 
     def _primary(self):
+        """处理原子表达式，这是语法的最高优先级部分"""
         token = self.current_token
         if token.type == "INTEGER":
             self._eat("INTEGER")
             return Num(token)
         elif token.type == "IDENTIFIER":
-            node = VarAccess(token)
             self._eat("IDENTIFIER")
-            return node
+            return VarAccess(token)
         elif token.type in ("TRUE", "FALSE"):
             self._eat(token.type)
             return Boolean(token)
@@ -44,9 +44,13 @@ class Parser:
             return self._if()
         elif token.type == "LBRACE":
             return self._block()
+        # *** FIX: Correctly parse spawn as a primary expression ***
+        elif token.type == "SPAWN":
+            return self._spawn()
         raise SyntaxError(f"Invalid primary expression at {token}")
 
     def _call(self):
+        """处理函数调用"""
         node = self._primary()
         while self.current_token.type == "LPAREN":
             self._eat("LPAREN")
@@ -61,15 +65,20 @@ class Parser:
         return node
 
     def _unary(self):
+        """处理一元运算符，包括 await"""
         token = self.current_token
         if token.type in ("PLUS", "MINUS"):
             self._eat(token.type)
             return UnaryOp(token, self._unary())
+        # *** FIX: Correctly parse await as a unary prefix operator ***
+        if token.type == "AWAIT":
+            self._eat("AWAIT")
+            return AwaitExpression(self._unary())
         return self._call()
 
     def _power(self):
+        """处理幂运算 (右结合)"""
         node = self._unary()
-        # Right-associativity for '^' handled by recursive call to _power
         if self.current_token.type == "CARET":
             op = self.current_token
             self._eat("CARET")
@@ -100,11 +109,9 @@ class Parser:
             node = BinOp(node, op, self._term())
         return node
 
-    _equality_ops = ("EQ", "NE")
-
     def _equality(self):
         node = self._comparison()
-        while self.current_token.type in self._equality_ops:
+        while self.current_token.type in ("EQ", "NE"):
             op = self.current_token
             self._eat(op.type)
             node = BinOp(node, op, self._comparison())
@@ -115,7 +122,6 @@ class Parser:
         while self.current_token.type == "PIPE":
             op = self.current_token
             self._eat("PIPE")
-            # Pipe has the lowest precedence and is left-associative
             node = BinOp(node, op, self._equality())
         return node
 
@@ -129,6 +135,10 @@ class Parser:
             block.statements.append(self._statement())
         self._eat("RBRACE")
         return block
+
+    def _spawn(self):
+        self._eat("SPAWN")
+        return SpawnExpression(self._block())
 
     def _function(self):
         self._eat("FN")

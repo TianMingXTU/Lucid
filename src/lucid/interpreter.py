@@ -3,7 +3,7 @@ from .ast import *
 from collections import Counter
 
 
-# (All classes: OkValue, ErrValue, Unit, UnitValue, etc. remain the same)
+# ... (All previous runtime classes: OkValue, ErrValue, Unit, etc. are unchanged) ...
 class OkValue:
     def __init__(self, value):
         self.value = value
@@ -103,6 +103,16 @@ class BuiltinFunction:
         return f"<Builtin Function: {self.name}>"
 
 
+# *** NEW: Task object for concurrency ***
+class Task:
+    def __init__(self, block, env):
+        self.block = block
+        self.env = env  # The environment where the task was spawned
+
+    def __repr__(self):
+        return "<Task>"
+
+
 class Environment:
     def __init__(self, outer=None):
         self.store, self.outer = {}, outer
@@ -140,6 +150,7 @@ class Interpreter(NodeVisitor):
 
     def _populate_builtins(self):
         self.env.set("Ok", BuiltinFunction(lambda value: OkValue(value), "Ok"))
+        # ... (other builtins)
         self.env.set("Err", BuiltinFunction(lambda msg: ErrValue(msg), "Err"))
         self.env.set(
             "is_ok", BuiltinFunction(lambda arg: isinstance(arg, OkValue), "is_ok")
@@ -158,6 +169,7 @@ class Interpreter(NodeVisitor):
             "print", BuiltinFunction(lambda arg: print(arg) or OkValue(None), "print")
         )
 
+    # ... (visit_BlockStatement, visit_BinOp, visit_UnaryOp, etc. are unchanged) ...
     def visit_BlockStatement(self, node):
         last_result = None
         for statement in node.statements:
@@ -178,10 +190,8 @@ class Interpreter(NodeVisitor):
             )
             right_func = self.visit(node.right)
             return self._apply_function(right_func, [value_to_pipe])
-
         left_unwrapped = self.visit(node.left)
         right_unwrapped = self.visit(node.right)
-
         left = (
             left_unwrapped
             if isinstance(left_unwrapped, UnitValue)
@@ -192,7 +202,6 @@ class Interpreter(NodeVisitor):
             if isinstance(right_unwrapped, UnitValue)
             else UnitValue(right_unwrapped, Unit())
         )
-
         if not (isinstance(left, UnitValue) and isinstance(right, UnitValue)):
             if (
                 op == "PLUS"
@@ -201,10 +210,8 @@ class Interpreter(NodeVisitor):
             ):
                 return str(left_unwrapped) + str(right_unwrapped)
             raise TypeError(f"Unsupported operation '{op}' on non-numeric types")
-
         l_unit, r_unit = left.unit, right.unit
         l_val, r_val = left.value, right.value
-
         if op == "PLUS" or op == "MINUS":
             if l_unit != r_unit:
                 raise TypeError(
@@ -220,12 +227,15 @@ class Interpreter(NodeVisitor):
         elif op == "DIV":
             if r_val == 0:
                 return ErrValue("Division by zero")
-            new_unit = Unit(
-                l_unit.numerators + r_unit.denominators,
-                l_unit.denominators + r_unit.numerators,
+            return OkValue(
+                UnitValue(
+                    l_val // r_val,
+                    Unit(
+                        l_unit.numerators + r_unit.denominators,
+                        l_unit.denominators + r_unit.numerators,
+                    ),
+                )
             )
-            # *** THE CORE FIX: Return a direct UnitValue on success ***
-            return UnitValue(l_val // r_val, new_unit)
         elif op == "CARET":
             if r_unit.numerators or r_unit.denominators:
                 raise TypeError("Exponent must be a scalar (dimensionless) number")
@@ -250,7 +260,6 @@ class Interpreter(NodeVisitor):
                 "LTE": "__le__",
             }
             return getattr(l_val, ops[op])(r_val)
-
         raise TypeError(f"Unsupported operation '{op}'")
 
     def visit_VarAccess(self, node):
@@ -260,7 +269,6 @@ class Interpreter(NodeVisitor):
             return UnitValue(1, Unit([var_name]))
         return val
 
-    # ... The rest of the visit methods are correct and remain unchanged ...
     def visit_Num(self, node):
         return node.value
 
@@ -301,6 +309,30 @@ class Interpreter(NodeVisitor):
     def visit_FunctionLiteral(self, node):
         return Function(node.parameters, node.body, self.env)
 
+    # *** NEW: Concurrency visit methods ***
+    def visit_SpawnExpression(self, node):
+        # For now, just create a Task object. No real concurrency yet.
+        return Task(node.block, self.env)
+
+    def visit_AwaitExpression(self, node):
+        task = self.visit(node.task_expr)
+        if not isinstance(task, Task):
+            raise TypeError("await can only be used on a task")
+
+        # In this version, we execute the task sequentially.
+        # We create a new environment for the task, based on where it was spawned.
+        task_env = Environment(outer=task.env)
+
+        # Temporarily switch to the task's environment to execute its block
+        original_env = self.env
+        self.env = task_env
+        result = self.visit(task.block)
+        self.env = original_env
+
+        if isinstance(result, ReturnValue):
+            return result.value
+        return result
+
     def _apply_function(self, func, args):
         if isinstance(func, BuiltinFunction):
             try:
@@ -313,9 +345,11 @@ class Interpreter(NodeVisitor):
             raise TypeError(
                 f"Expected {len(func.parameters)} arguments, got {len(args)}"
             )
+
         call_env, original_env = Environment(outer=func.env), self.env
         for param, arg in zip(func.parameters, args):
             call_env.set(param.value, arg)
+
         self.env = call_env
         result = self.visit(func.body)
         self.env = original_env

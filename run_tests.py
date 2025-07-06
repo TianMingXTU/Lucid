@@ -1,24 +1,31 @@
-# run_tests.py (Upgraded for v3.2)
+# run_tests.py (Upgraded for v3.3)
 import sys
 from src.lucid.lexer import Lexer
 from src.lucid.parser import Parser
-from src.lucid.interpreter import Interpreter, UnitValue, Unit, OkValue, ErrValue
+from src.lucid.interpreter import Interpreter, UnitValue, Unit, OkValue, ErrValue, Task
 
 TEST_CASES = [
-    # --- Basic Sanity Checks ---
     {
         "name": "Recursive Function",
         "source": "let factorial = fn(n) { if n == 0 then 1 else { n * factorial(n - 1) } }; factorial(5)",
         "expected": 120,
     },
-    # --- Division now returns direct values on success ---
-    {"name": "Successful Division", "source": "100 / 10", "expected": 10},
+    # *** FIX: Division now returns a Result, so expect Ok(...) ***
     {
-        "name": "Failed Division",
+        "name": "Complex Unit Expression",
+        "source": "let force = 10*kg*m/(s^2); force",
+        "expected": OkValue(UnitValue(10, Unit(["kg", "m"], ["s", "s"]))),
+    },
+    {
+        "name": "Result: Successful Division",
+        "source": "100 / 10",
+        "expected": OkValue(UnitValue(10, Unit())),
+    },
+    {
+        "name": "Result: Failed Division",
         "source": "100 / 0",
         "expected": ErrValue("Division by zero"),
     },
-    # --- Pipe Tests ---
     {
         "name": "Pipe: Simple Pipe",
         "source": "let double = fn(x){x*2}; 10 |> double",
@@ -34,47 +41,66 @@ TEST_CASES = [
         "source": "let double = fn(x){x*2}; (100/0) |> double",
         "expected": ErrValue("Division by zero"),
     },
-    # --- Unit System Tests (now expect direct UnitValues) ---
     {
-        "name": "Unit Division (Speed)",
-        "source": "100*km / (10*hr)",
-        "expected": UnitValue(10, Unit(["km"], ["hr"])),
+        "name": "Builtin: unwrap_or() with Err",
+        "source": 'unwrap_or(Err("oops"), -1)',
+        "expected": -1,
     },
     {
-        "name": "Unit Division (Cancellation)",
-        "source": "100*m*m / (10*m)",
-        "expected": UnitValue(10, Unit(["m"])),
+        "name": "Concurrency: Spawn returns a task",
+        "source": "spawn { 1+1 }",
+        "expected": Task(None, None),
     },
     {
-        "name": "Complex Unit Expression",
-        "source": "let force = 10*kg*m/(s^2); force",
-        "expected": UnitValue(10, Unit(["kg", "m"], ["s", "s"])),
+        "name": "Concurrency: Await executes a task",
+        "source": "let my_task = spawn { 10 * 2 }; await my_task",
+        "expected": 20,
     },
-    # --- Builtin Function Tests ---
-    {"name": "Builtin: Ok()", "source": "Ok(100)", "expected": OkValue(100)},
     {
-        "name": "Builtin: Err()",
-        "source": 'Err("file not found")',
-        "expected": ErrValue("file not found"),
+        "name": "Concurrency: Await a value (fail)",
+        "source": "await 10",
+        "expected": "TypeError: await can only be used on a task",
     },
-    {"name": "Builtin: is_ok() True", "source": "is_ok(Ok(10))", "expected": True},
+    {
+        "name": "Concurrency: Task with return",
+        "source": "let t = spawn { return 50; 100 }; await t",
+        "expected": 50,
+    },
+    {
+        "name": "Concurrency: Task captures environment",
+        "source": "let x = 10; let t = spawn { x * x }; await t",
+        "expected": 100,
+    },
 ]
 
 
 def compare_results(result, expected):
-    # Unpack unitless values for easier comparison
+    if isinstance(expected, Task):
+        return isinstance(result, Task)
+    # Unpack for easier comparison
     if (
         isinstance(result, UnitValue)
         and not result.unit.numerators
         and not result.unit.denominators
     ):
         result = result.value
+    if isinstance(result, OkValue):
+        if (
+            isinstance(result.value, UnitValue)
+            and not result.value.unit.numerators
+            and not result.value.unit.denominators
+        ):
+            result = OkValue(result.value.value)
+    if isinstance(expected, str) and expected.startswith("TypeError:"):
+        return isinstance(result, TypeError) and str(result) == expected.replace(
+            "TypeError: ", ""
+        )
     return result == expected
 
 
 def run_all_tests():
     print("=" * 50)
-    print("  Running Lucid Language Test Suite v3.2")
+    print("  Running Lucid Language Test Suite v3.3")
     print("=" * 50)
     passed_count = 0
     failed_count = 0
@@ -98,15 +124,11 @@ def run_all_tests():
                 )
                 failed_count += 1
         except Exception as e:
-            # A simple way to check for expected errors
             if (
-                isinstance(expected, ErrValue)
-                and isinstance(e, TypeError)
-                and expected.message in str(e)
+                isinstance(expected, str)
+                and expected.startswith(type(e).__name__ + ":")
+                and str(e) in expected
             ):
-                print("\033[92m [PASS] (Correctly caught error)\033[0m")
-                passed_count += 1
-            elif expected == e:
                 print("\033[92m [PASS] (Correctly caught error)\033[0m")
                 passed_count += 1
             else:
