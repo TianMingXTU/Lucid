@@ -1,98 +1,99 @@
 # Lucid Lang
 
-[![语言版本](https://img.shields.io/badge/language-Lucid_v0.1-blueviolet.svg)](https://github.com/your-username/lucid)
-[![构建状态](https://img.shields.io/badge/build-passing-brightgreen.svg)](https://github.com/your-username/lucid/actions)
-[![许可证](https://img.shields.io/badge/license-MIT-lightgrey.svg)](LICENSE)
+[](https://github.com/your-username/lucid)
+[](https://github.com/your-username/lucid/actions)
+[](https://www.google.com/search?q=LICENSE)
 
-> 一门追求极致清晰与表达力的现代化编程语言。
+> 一门追求极致**清晰**、**高效**和**安全**的现代化编程语言。
 
-`Lucid` 是一个全新的编程语言项目，旨在摆脱传统语言的历史包袱，吸收近二十年来的语言设计精华。我们的目标是创造一种语法极简、行为可预测、开发体验一流的语言，让编程回归其简单而强大的本质。
+`Lucid` 是一个全新的编程语言项目，它旨在摆脱传统语言的历史包袱，吸收近二十年来的语言设计精华。我们的目标是创造一种语法极简、行为可预测、开发体验一流的语言，让编程回归其简单而强大的本质。
 
 ## 设计哲学 (Core Principles)
 
-`Lucid` 的设计遵循以下核心原则，这是我们语言的灵魂：
+`Lucid` 的设计遵循以下核心原则，它们共同构成了这门语言的灵魂：
 
-1.  **一切皆为表达式 (Everything is an Expression)**: `if/else`、代码块等所有结构都返回值，使代码组合性更强，逻辑更连贯。
+1.  **物理世界的守护者 (Guardian of the Physical World)**: 通过**内置的单位类型系统**，`Lucid` 可以在编译或运行时，从根本上杜绝因物理单位混淆（如米和秒相加）而导致的灾难性错误。
 
-2.  **简洁至上 (Simplicity First)**: 废除分号，简化不必要的括号。代码即思想，不应被语法噪音所淹没。
+2.  **优雅的数据流大师 (Master of Elegant Data Flow)**: 以**管道操作符 (`|>`)** 为核心，深度融合`Result`错误处理类型。这使得处理复杂的、可能失败的操作链时，代码依然能保持从上到下的线性逻辑，清晰、健壮且极其优雅。
 
-3.  **默认不可变 (Immutability by Default)**: 使用 `let` 声明的变量天生不可变，从根本上提高代码的安全性和可预测性。可变性需要通过 `var` 关键字明确声明。
+3.  **未来的并发先驱 (Pioneer of Future Concurrency)**: 通过**结构化并发** (`spawn`/`await`)，提供一种全新的、心智负担极低的并发模型。它旨在让编写安全、高效的并行代码，像写同步代码一样简单自然。
 
-4.  **优雅的管道操作 (`|>`)**: 管道操作符是语言的一等公民，鼓励编写清晰、线性的数据处理流。
+4.  **一切皆为表达式 (Everything is an Expression)**: `if/else`、代码块等所有结构都返回值，极大地增强了语言的组合能力和表达力。
 
-5.  **明确的错误处理 (Explicit Error Handling)**: 摒弃隐式的 `try/catch`，采用 `Result<T, E>` 类型，强制开发者正视并处理每一个潜在的错误。
+5.  **安全与简洁 (Safety & Simplicity)**: 默认不可变性、无`null`值、显式错误处理和极简的语法，共同构建了一个既安全又易于使用的编程环境。
 
-## 当前状态 (Current Status)
+## 当前特性一览 (Feature Overview)
 
-**版本: `v0.1` - 架构设计与规划阶段**
+经过密集的开发，`Lucid v3.3` 版本已经拥有一个稳定、高效且功能丰富的核心，其主要特性包括：
 
-项目目前处于初始设计阶段。我们已经确定了语言的核心哲学、技术路线和项目结构。下一步将是实现核心解释器的原型。
+- **完整的算术与逻辑运算**: 支持 `+`, `-`, `*`, `/`, `^` (幂运算)，以及 `==`, `!=`, `>`, `<`, `>=`, `<=` 等全套比较运算符，并能正确处理优先级。
+- **函数作为一等公民**: 支持高阶函数、词法作用域和强大的**闭包**特性。
+- **灵活的条件表达式**: `if/else` 既可以作为简单表达式，也可以使用 `{...}` 代码块。
+- **内置单位类型系统**: 支持 `m`, `s`, `kg` 等物理单位的定义，并能进行安全的复合单位运算（如 `km/hr`, `m^2`）。
+- **`Result` 错误处理机制**: 通过内置的 `Ok(value)` 和 `Err(error)` 类型，提供健壮的错误处理。
+- **智能管道操作符**: `|>` 能够识别 `Result` 类型并自动进行“短路”处理。
+- **结构化并发骨架**: 已实现 `spawn` 和 `await` 关键字的完整语法和（串行的）执行模型，为未来的并行化打下了坚实基础。
 
 ## 路线图 (Roadmap)
 
-- [x] **v0.1**: 架构设计与规划
-  - [x] 确定核心设计哲学
-  - [x] 设计项目目录结构
-  - [x] 制定开发路线图
-- [ ] **v0.2 (当前目标)**: 核心原型实现
-  - [ ] 实现词法分析器 (Lexer) 和语法分析器 (Parser)
-  - [ ] 构建基础算术运算和`let`赋值的解释器 (Interpreter)
-- [ ] **v0.3**: 现代化核心功能
-  - [ ] 实现表达式驱动的 `if/then/else`
-  - [ ] 引入 `var` 关键字以支持可变性
-- [ ] **v0.4**: 函数与管道
-  - [ ] 实现函数定义与调用、闭包
-  - [ ] 实现管道操作符 `|>` 的完整功能
-- [ ] **v1.0**: 迈向可用
-  - [ ] 基础标准库 (字符串处理, 集合操作)
-  - [ ] 模块系统
+我们的宏伟蓝图正在一步步变为现实。
+
+- [x] **v1.0 - v3.3 (核心引擎与创新特性)**
+
+  - [x] 稳定的递归下降解析器与解释器引擎
+  - [x] 函数、闭包、词法作用域
+  - [x] 内置单位类型系统 (支持复合单位与幂运算)
+  - [x] `Result` 类型与智能管道错误处理
+  - [x] 结构化并发的语法与串行执行模型
+
+- [ ] **v4.0 (未来规划): 性能与生态**
+
+  - [ ] **真正的并行执行**: 将 `spawn`/`await` 的后端从串行模拟升级为真正的多线程/异步执行。
+  - [ ] **基础标准库**: 增加更多内置函数，特别是针对字符串、集合（列表/字典）的操作。
+  - [ ] **模块系统**: 支持将代码拆分到多个文件并相互导入。
+  - [ ] **性能优化**: 从树遍历解释器向更高性能的执行模型（如字节码虚拟机 VM）探索。
 
 ## 目录结构 (Directory Structure)
 
-为了保证项目的清晰、可维护和可扩展性，我们采用以下专业目录结构。每一个文件和目录都有其明确的职责。
+为了保证项目的清晰、可维护和可扩展性，我们采用以下专业目录结构。
 
 ```
-
 lucid-lang/
-├── .gitignore          \# Git 忽略文件配置，避免提交不必要的文件
-├── LICENSE             \# 项目许可证文件 (例如 MIT)，定义他人如何使用你的代码
-├── README.md           \# 就是你正在看的这个项目总览文件
-├── pyproject.toml      \# (可选) Python 项目配置文件，用于管理依赖和打包
+├── .gitignore
+├── LICENSE
+├── README.md
+├── run_tests.py        # 官方自动化测试套件
 │
-├── src/                \# 存放所有核心源代码的根目录
-│   └── lucid/          \# 语言核心源代码的主包 (Package)
-│       ├── init.py   \# 声明该目录为一个 Python 包
-│       ├── main.py   \# REPL (交互式环境) 的入口，使 `python -m lucid` 可运行
-│       ├── ast.py        \# 定义抽象语法树 (AST) 的所有节点结构
-│       ├── core\_types.py \# 定义核心数据结构，如 Token, Result 等
-│       ├── interpreter.py\# 解释器，负责执行 AST
-│       ├── lexer.py      \# 词法分析器，将代码字符串转换为令牌 (Token)
-│       └── parser.py     \# 语法分析器，将令牌流构建成 AST
-│
-├── tests/              \# 存放所有测试文件的目录，与源代码分离
-│   ├── init.py
-│   ├── test\_lexer.py     \# 针对词法分析器的单元测试
-│   ├── test\_parser.py    \# 针对语法分析器的单元测试
-│   └── test\_interpreter.py \# 针对解释器和完整流程的集成测试
-│
-├── examples/           \# 存放 Lucid 语言的示例代码，展示语言特性
-│   ├── hello\_world.lucid
-│   └── fibonacci.lucid
-│
-└── docs/               \# 存放所有文档的目录
-├── spec.md         \# Lucid 语言的官方技术规范 (非常重要！)
-└── tutorial.md     \# Lucid 语言的入门教程
-
+└── src/
+    └── lucid/
+        ├── __init__.py
+        ├── __main__.py
+        ├── ast.py
+        ├── core_types.py
+        ├── interpreter.py
+        ├── lexer.py
+        └── parser.py
 ```
 
 ## 如何开始 (Getting Started)
 
-当项目进入开发阶段后，贡献者和用户可以遵循以下步骤来运行 `Lucid`：
-
 1.  **克隆仓库**: `git clone https://github.com/your-username/lucid-lang.git`
+
 2.  **进入目录**: `cd lucid-lang`
-3.  **运行 REPL (交互式环境)**: `python -m src.lucid`
-4.  **运行测试**: `pytest tests/` (需要安装 `pytest` 框架)
+
+3.  **运行自动化测试 (推荐)**:
+
+    ```bash
+    python run_tests.py
+    ```
+
+    （确保所有测试都通过，证明你的环境是健康的）
+
+4.  **启动 REPL (交互式环境)**:
+
+    ```bash
+    python -m src.lucid
+    ```
 
 ## 贡献指南 (Contributing)
 
