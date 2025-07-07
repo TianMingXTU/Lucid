@@ -4,14 +4,16 @@ from .core_types import Token
 
 
 class Lexer:
-    """词法分析器 (v3.2 - 支持并发关键字)"""
+    """词法分析器 (v4.0 - 最终修复版，支持浮点数)"""
 
     def __init__(self, text):
         self.text = text
         self.token_specs = [
             ("SKIP", r"[ \t\r\n\u00A0]+"),
             ("STRING", r'"[^"]*"'),
-            ("INTEGER", r"\d+"),
+            # *** BUG FIX: 使用更强大的正则表达式来同时匹配浮点数和整数 ***
+            # 我们将 'INTEGER' 重命名为 'NUMBER'
+            ("NUMBER", r"\d+(\.\d*)?|\.\d+"),
             ("FN", r"\bfn\b"),
             ("LET", r"\blet\b"),
             ("TRUE", r"\btrue\b"),
@@ -20,8 +22,8 @@ class Lexer:
             ("ELSE", r"\belse\b"),
             ("THEN", r"\bthen\b"),
             ("RETURN", r"\breturn\b"),
-            ("SPAWN", r"\bspawn\b"),  # NEW
-            ("AWAIT", r"\bawait\b"),  # NEW
+            ("SPAWN", r"\bspawn\b"),
+            ("AWAIT", r"\bawait\b"),
             ("IDENTIFIER", r"[a-zA-Z_][a-zA-Z0-9_]*"),
             ("PIPE", r"\|>"),
             ("EQ", r"=="),
@@ -52,8 +54,14 @@ class Lexer:
             type, value = match.lastgroup, match.group()
             if type == "SKIP":
                 continue
-            if type == "INTEGER":
-                value = int(value)
+
+            # *** BUG FIX: 正确转换数字类型 ***
+            if type == "NUMBER":
+                # 如果值包含小数点，就转换为 float，否则转换为 int
+                if "." in value:
+                    value = float(value)
+                else:
+                    value = int(value)
             elif type == "TRUE":
                 value = True
             elif type == "FALSE":

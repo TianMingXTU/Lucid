@@ -4,7 +4,7 @@ from .ast import *
 
 
 class Parser:
-    """语法分析器 (v3.3 - 最终稳定版)"""
+    """语法分析器 (v3.5 - 最终修复版)"""
 
     def __init__(self, lexer):
         self.tokens = lexer.get_token_stream()
@@ -21,9 +21,8 @@ class Parser:
     def _primary(self):
         """处理原子表达式，这是语法的最高优先级部分"""
         token = self.current_token
-        if token.type == "INTEGER":
-            self._eat("INTEGER")
-            # Look ahead for a unit
+        if token.type == "NUMBER":
+            self._eat("NUMBER")
             if self.current_token.type == "IDENTIFIER":
                 unit_token = self.current_token
                 self._eat("IDENTIFIER")
@@ -49,7 +48,6 @@ class Parser:
             return self._if()
         elif token.type == "LBRACE":
             return self._block()
-        # *** FIX: Correctly parse spawn as a primary expression ***
         elif token.type == "SPAWN":
             return self._spawn()
         raise SyntaxError(f"Invalid primary expression at {token}")
@@ -75,7 +73,6 @@ class Parser:
         if token.type in ("PLUS", "MINUS"):
             self._eat(token.type)
             return UnaryOp(token, self._unary())
-        # *** FIX: Correctly parse await as a unary prefix operator ***
         if token.type == "AWAIT":
             self._eat("AWAIT")
             return AwaitExpression(self._unary())
@@ -115,6 +112,7 @@ class Parser:
         return node
 
     def _equality(self):
+        # *** BUG FIX: 使用 '_comparison' 而不是 'comparison' ***
         node = self._comparison()
         while self.current_token.type in ("EQ", "NE"):
             op = self.current_token
